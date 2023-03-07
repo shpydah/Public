@@ -1,0 +1,582 @@
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Los_Angeles
+
+# ===== Dev Specific ===========
+#  CUDA 
+WORKDIR /tmp
+
+RUN apt-get update \
+    && apt-get install -q -y --no-install-recommends wget
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin --no-check-certificate \
+    && mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600 \
+    && wget https://developer.download.nvidia.com/compute/cuda/11.7.0/local_installers/cuda-repo-ubuntu2004-11-7-local_11.7.0-515.43.04-1_amd64.deb --no-check-certificate \
+    && dpkg -i cuda-repo-ubuntu2004-11-7-local_11.7.0-515.43.04-1_amd64.deb \
+    && cp /var/cuda-repo-ubuntu2004-11-7-local/cuda-*-keyring.gpg /usr/share/keyrings/ \
+    && apt-get update \
+    && apt-get -y install cuda
+
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64
+ENV PATH=${PATH}:${CUDA_HOME}/bin
+ENV CPATH=/usr/local/cuda/targets/x86_64-linux/include:$CPATH
+
+RUN echo "export CUDA_HOME=/usr/local/cuda" >> .bashrc
+RUN echo "export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64" >> .bashrc
+RUN echo "export PATH=${PATH}:${CUDA_HOME}/bin" >> .bashrc
+RUN echo "export CPATH=/usr/local/cuda/targets/x86_64-linux/include:$CPATH" >> .bashrc
+
+# Install base Ubuntu packages
+RUN apt-get update \
+    && apt-get install -q -y --no-install-recommends \
+      apt-utils \
+      pkg-config \
+      apt-transport-https \
+      locales \
+      vim \
+      curl \
+      gnupg \
+      gnupg2 \
+      lsb-release \
+      bash-completion \
+      dirmngr \
+      software-properties-common \
+      build-essential \
+      git \
+      git-lfs \
+      python3-pip \
+      python3-flake8 \
+      python3-flake8-docstrings \
+      python3-pytest \
+      openssh-server \
+      cmake \
+      usbutils \
+      emacs \
+      nano \
+      libtins-dev \
+      net-tools \
+      iputils-ping \
+      build-essential \
+      gdb \
+      members \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && add-apt-repository universe
+
+# ===== OpenCV ===========
+
+ARG OPENCV_VERSION=4.7.0
+
+# Install dependencies
+RUN apt-get update || true && apt-get upgrade -y && \
+  apt-get install --no-install-recommends -y \
+    libgtk2.0-dev \
+    pkg-config \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libtbb2 \
+    libtbb-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    yasm \
+    libatlas-base-dev \
+    gfortran \
+    libpq-dev \
+    libxine2-dev \
+    libglew-dev \
+    libtiff5-dev \
+    zlib1g-dev \
+    libavutil-dev \
+    libpostproc-dev \
+    libeigen3-dev \
+    python3-dev \
+    python3-pip \
+    python3-numpy \
+    libx11-dev \
+    libdc1394-22-dev \
+    unzip \
+    ninja-build \
+    libopencv-dev \
+    libgtk-3-dev \
+    libavresample-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    gstreamer1.0-tools \
+    gstreamer1.0-libav \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-opencv \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-base1.0-0 \
+    libgstreamer-plugins-good1.0-0 \
+    libgstreamer-plugins-good1.0-dev \
+    libgstreamer-plugins-bad1.0-0 \
+    libgstreamer-plugins-bad1.0-dev \
+    gstreamer1.0-libav \
+    libv4l-dev && \
+  rm -rf /var/lib/apt/lists/*
+
+# Set Working directory
+WORKDIR /opt
+
+# Install OpenCV from Source - these comments from wiki:
+      # -D WITH_CUDA=ON \
+      # -D BUILD_PNG=ON \
+      # -D OPENCV_EXTRA_MODULES_PATH=/opt/opencv_contrib/modules \
+
+RUN git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git && \
+    git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
+
+# -GNinja \
+RUN cd opencv \
+    && mkdir build \
+    && cd build \
+    && cmake -GNinja \
+      -D WITH_CUDA=ON \
+      -D BUILD_PNG=ON \
+      -D OPENCV_EXTRA_MODULES_PATH=/opt/opencv_contrib/modules \
+      .. \
+    && ninja \
+    && ninja install
+
+# ===== PointCloudLibrary PCL =======
+
+WORKDIR /opt
+
+ARG VTK_VERSION=7
+
+RUN apt-get update && \
+  apt-get -V install --no-install-recommends -y \
+      clang \
+      clang-tidy \
+      libbenchmark-dev \
+      libblas-dev \
+      libboost-date-time-dev \
+      libboost-filesystem-dev \
+      libboost-iostreams-dev \
+      libflann-dev \
+      # libglew-dev \
+      libgtest-dev \
+      libopenni-dev \
+      libopenni2-dev \
+      libproj-dev \
+      libqhull-dev \
+      libqt5opengl5-dev \
+      libusb-1.0-0-dev \
+      libvtk${VTK_VERSION}-dev \
+      libvtk${VTK_VERSION}-qt-dev \
+      # lsb-release \
+      qtbase5-dev \
+      # software-properties-common \
+      # wget \
+      xvfb && \
+  rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/PointCloudLibrary/pcl.git
+
+RUN cd pcl \
+    && mkdir build \
+    && cd build 
+RUN cmake -GNinja \
+        -D WITH_CUDA=ON \
+        -D BUILD_CUDA=ON \
+        -D BUILD_GPU=ON \
+        -D BUILD_segmentation=ON \
+        -D BUILD_people=OFF \
+        -D BUILD_recognition=OFF \
+        -D BUILD_visualization=OFF \
+        -D BUILD_tracking=OFF \
+        -D BUILD_apps=OFF \
+        -D BUILD_examples=OFF \
+        -D BUILD_outofcore=OFF \
+        -D BUILD_stereo=OFF \
+        -D BUILD_surface_on_nurbs=OFF \
+        -D CUDA_ARCH_BIN=86 \
+        .. \
+    && ninja -j15 -l15 \
+    && ninja install
+
+# ===== Geographic Library =======
+
+WORKDIR /opt
+
+RUN git clone -b v2.1.2 https://github.com/geographiclib/geographiclib.git
+
+RUN cd geographiclib \
+    && mkdir build \
+    && cd build \
+    && cmake -GNinja .. \
+    && ninja \
+    && ninja install
+
+# ===== AprilTag Library =======
+
+WORKDIR /opt
+
+RUN git clone https://github.com/AprilRobotics/apriltag.git
+
+# does this need to be build_pkg?
+RUN cd apriltag \
+    && mkdir build \
+    && cd build \
+    && cmake -GNinja .. \
+    && ninja \
+    && ninja install
+
+# ===== Depthai-API Install =====
+
+WORKDIR /opt
+
+RUN python3 -m pip install -U pip \
+    &&  python3 -m pip install --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-snapshot-local/ depthai
+
+RUN mkdir oak \
+    && cd oak \
+    && git clone --recursive https://github.com/luxonis/depthai-core.git \
+    && cd depthai-core \
+    && mkdir build \
+    && cd build \
+    && cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=/usr/local .. \
+    && make \
+    && make install
+
+RUN python3 -m pip install --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-snapshot-local/ depthai
+
+# Move this to ROS install section:
+# git clone https://github.com/AutoModality/am_depthai.git -b GV-81/ros-2-foxy
+
+# ==== ROS2 ====
+
+# Get the keys and add ROS sources to package lists
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+
+RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+# Install ROS dev packages
+RUN apt-get update && \
+    apt-get install -q -y --no-install-recommends \
+      python3-colcon-common-extensions \
+      python3-colcon-mixin \
+      python3-rosdep \
+      python3-setuptools \
+      python3-vcstool \
+      ros-dev-tools \
+	libeigen3-dev \
+	uncrustify \
+	qtbase5-dev \
+	libqt5core5a \
+	libqt5gui5 \
+	libqt5opengl5 \
+	libqt5widgets5 \
+	python3-pytest-timeout \
+	python3-matplotlib \
+	libignition-math6-dev \
+	python3-mypy \
+	python3-pytest-mock \
+	python3-psutil \
+	cppcheck \
+	libspdlog-dev \
+	liborocos-kdl-dev \
+	python3-lxml \
+	python3-cryptography \
+	libsqlite3-dev \
+	libconsole-bridge-dev \
+	libtinyxml-dev \
+	python3-lark \
+	clang-tidy \
+	python3-dev \
+	clang-format \
+	pyflakes3 \
+	libignition-cmake2-dev \
+	doxygen \
+	libbenchmark-dev \
+	libyaml-cpp-dev \
+	qt5-qmake \
+	python3-nose \
+	libopencv-dev \
+	libfreetype6-dev \
+	libxaw7-dev \
+	libxrandr-dev \
+	libgl1-mesa-dev \
+	libxml2-utils \
+	python3-lttng \
+	libssl-dev \
+	libtinyxml2-dev \
+	libasio-dev \
+	libcurl4-openssl-dev \
+	file \
+	libassimp-dev \
+	google-mock \
+	python3-pytest-cov \
+	libzstd-dev \
+	libbullet-dev \
+	acl \
+	libacl1-dev \
+	python3-babeltrace \
+	python3-pykdl \
+	libgtest-dev \
+	libcunit1-dev \
+	graphviz \
+	python3-netifaces \
+	python3-pydot \
+	python3-pygraphviz \
+	python3-cairo \
+	python3-pil \
+	libyaml-dev \
+	libpyside2-dev \
+	libshiboken2-dev \
+	pyqt5-dev \
+	python3-pyqt5 \
+	python3-pyqt5.qtsvg \
+	python3-pyside2.qtsvg \
+	python3-sip-dev \
+	shiboken2 \
+	tango-icon-theme \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# install python packages
+RUN pip3 install -U \
+    pybind11 \
+    pytest \
+    argcomplete \
+    flake8 \
+    flake8-blind-except \
+    flake8-builtins \
+    flake8-class-newline \
+    flake8-comprehensions \
+    flake8-deprecated \
+    flake8-docstrings \
+    flake8-import-order \
+    flake8-quotes \
+    pytest-repeat \
+    pytest-rerunfailures
+
+# bootstrap rosdep
+RUN rosdep init && \
+    rosdep update
+
+# # setup colcon mixin and metadata
+RUN colcon mixin add default \
+      https://raw.githubusercontent.com/colcon/colcon-mixin-repository/master/index.yaml && \
+    colcon mixin update && \
+    colcon metadata add default \
+      https://raw.githubusercontent.com/colcon/colcon-metadata-repository/master/index.yaml && \
+    colcon metadata update
+
+# set environment
+ARG ROS_DISTRO=humble
+ENV ROS_DISTRO=$ROS_DISTRO
+ENV ROS_VERSION=2
+ENV ROS_PYTHON_VERSION=3
+ENV ROS2_WS /opt/ros2_ws
+RUN mkdir -p $ROS2_WS/src
+WORKDIR $ROS2_WS
+
+# clone source
+ARG ROS2_BRANCH=$ROS_DISTRO
+ARG ROS2_REPO=https://github.com/ros2/ros2.git
+RUN git clone $ROS2_REPO -b $ROS2_BRANCH && \
+    vcs import src < ros2/ros2.repos
+
+# install ROS2 dependencies
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive \
+    rosdep install -y \
+      --from-paths src \
+      --ignore-src \
+      --skip-keys " \
+          fastcdr \
+          rti-connext-dds-6.0.1 \
+          urdfdom_headers" \
+    && rm -rf /var/lib/apt/lists/*
+
+# build source
+RUN colcon \
+    build \
+    --symlink-install \
+    --mixin build-testing-on release \
+    --cmake-args \
+      -DPYBIND11_PYTHON_VERSION=3.8 \
+      --no-warn-unused-cli \
+      -DSECURITY=ON \
+      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# test build
+ARG RUN_TESTS
+ARG FAIL_ON_TEST_FAILURE
+RUN if [ ! -z "$RUN_TESTS" ]; then \
+        colcon test; \
+        if [ ! -z "$FAIL_ON_TEST_FAILURE" ]; then \
+            colcon test-result; \
+        else \
+            colcon test-result || true; \
+        fi \
+    fi
+
+# ===== More dependencies ======
+RUN apt-get update && apt-get -V install --no-install-recommends -y \
+      libangles-dev \
+      xsdcxx \
+      libflann-dev \
+      libboost-all-dev \
+      libjsoncpp-dev \
+      libxerces-c-dev \
+      python3-catkin-tools \
+      python3-rosinstall-generator && \
+  rm -rf /var/lib/apt/lists/*
+
+# ===== AMROS Tools =====
+WORKDIR $ROS2_WS/src
+
+# ARG statement "unknown" below allows cached Dockerfile build to resume from SPECIFIC step; 
+# Put at any point you want to resume from (debugging tool)
+
+# ARG ROS-PERCEPTION=unknown
+
+RUN git clone https://github.com/ros-perception/vision_opencv.git -b humble && \
+    git clone https://github.com/ros-perception/perception_pcl.git -b ros2 && \
+    git clone https://github.com/ros-perception/pcl_msgs.git -b ros2 && \
+    git clone https://github.com/ros-geographic-info/geographic_info.git -b ros2 && \
+    git clone https://github.com/ros/eigen_stl_containers.git -b ros2 && \
+    git clone https://github.com/ros/diagnostics.git -b stale/humble && \
+    git clone https://github.com/ros-drivers/usb_cam.git -b ros2 && \
+    git clone https://github.com/OctoMap/octomap_msgs.git -b ros2 && \
+    git clone https://github.com/CCNYRoboticsLab/imu_tools.git -b humble && \
+    git clone https://github.com/ros-drivers/joystick_drivers.git -b ros2
+
+# clone specific commit of vision_msgs
+# Added this afer ROS developers addded rviz features that broke the commit we were using
+WORKDIR $ROS2_WS/src
+
+RUN git clone https://github.com/ros-perception/vision_msgs.git && \
+    cd vision_msgs && \
+    git checkout bc2240ca74fbd6bf24ef86f61d4a3092a3b724d0 
+# original git clone string:
+# git clone https://github.com/ros-perception/vision_msgs.git -b ros2 && \
+
+# ===== Install mavros =====
+WORKDIR $ROS2_WS/src
+RUN git clone https://github.com/ros-controls/control_msgs.git -b master \
+    && git clone https://github.com/ros-controls/control_toolbox.git -b ros2-master \
+    && git clone https://github.com/ros-controls/realtime_tools.git -b master \
+    && git clone https://github.com/cra-ros-pkg/robot_localization.git -b ros2
+
+RUN apt-get update \
+    && apt-get install -y libgeographic-dev
+
+WORKDIR $ROS2_WS
+RUN apt-get install python3-catkin-tools python3-rosinstall-generator -y \
+    && rosinstall_generator --format repos mavlink | tee /tmp/mavlink.repos \
+    && rosinstall_generator --format repos --upstream mavros | tee -a /tmp/mavros.repos \
+    && vcs import src < /tmp/mavlink.repos \
+    && vcs import src < /tmp/mavros.repos \
+    && rosdep install --from-paths src --ignore-src -y \
+      --skip-keys " \
+          fastcdr \
+          rti-connext-dds-6.0.1 \
+          urdfdom_headers \
+          angles \
+          image_transport_plugins"
+
+# finish up
+RUN ./src/mavros/mavros/scripts/install_geographiclib_datasets.sh
+
+# ===== ISAAC =====
+# VPI Install
+RUN apt-get install -y gnupg \
+    && apt-key adv --fetch-key https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+    && apt-get install -y software-properties-common \
+    && add-apt-repository 'deb https://repo.download.nvidia.com/jetson/x86_64/focal r34.1 main' \
+    && apt-get update \
+    && apt-get install -y libnvvpi2 vpi2-dev vpi2-samples
+
+# Cloning ISAAC into ROS2 WS
+WORKDIR $ROS2_WS/src
+RUN git clone https://github.com/osrf/negotiated.git \
+    && git clone https://github.com/AutoModality/isaac_ros_common.git \
+    && git clone https://github.com/AutoModality/isaac_ros_nitros.git \
+    && git clone https://github.com/AutoModality/isaac_ros_visual_slam.git
+
+# Pull ISAAC repos via git-lfs (installed at start)
+RUN cd isaac_ros_common \
+    && git-lfs pull \
+    && cd ../isaac_ros_visual_slam \
+    && git-lfs pull \
+    && cd ../isaac_ros_nitros \
+    && git-lfs pull 
+
+#colcon build
+WORKDIR $ROS2_WS
+RUN . /opt/ros2_ws/install/local_setup.sh \
+    && colcon \
+        build \
+        --symlink-install \
+        --cmake-args \
+        --no-warn-unused-cli \
+        -DSECURITY=ON \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+RUN groupadd ubuntu \
+    && useradd ubuntu -m -g ubuntu -G sudo \
+    && usermod -a -G video ubuntu \
+    && usermod -a -G dialout ubuntu
+
+# add-to-build section
+
+# This should be higher when figureed out https://farmx1.atlassian.net/browse/GV-681
+RUN pip install --upgrade pip \
+    && pip install --upgrade typing_extensions \
+    && pip install scipy \
+    && pip install numpy==1.23
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN echo 'ubuntu:ubuntu777' | chpasswd
+ENV HOME=/home/ubuntu
+WORKDIR /home/ubuntu
+RUN echo "source /opt/ros2_ws/install/local_setup.bash" >> .bashrc
+
+# ===== AMROS =====
+RUN mkdir /var/log/amros \
+    && chmod 777 /var/log/amros
+
+USER ubuntu
+
+ENV ROS2_WS /home/ubuntu/ros2_amros
+
+# mkdir is correct as directories created by WORKDIR are created as root permissions
+RUN mkdir -p $ROS2_WS/src
+WORKDIR $ROS2_WS/src
+
+RUN git clone https://<github_token>@github.com/AutoModality/am_locator -b ros2 \
+    && git clone https://<github_token>@github.com/AutoModality/am_super -b ros2 \
+    && git clone https://<github_token>@github.com/AutoModality/am_utils -b ros2 \
+    && git clone https://<github_token>@github.com/AutoModality/am_msgs -b ros2 \
+    && git clone https://<github_token>@github.com/AutoModality/am_test -b master \
+    && git clone https://<github_token>@github.com/AutoModality/am_world -b ros2 \
+    && git clone https://<github_token>@github.com/AutoModality/am_tools -b master
+
+#colcon build
+WORKDIR $ROS2_WS
+RUN . /opt/ros2_ws/install/local_setup.sh \
+  && colcon \
+    build \
+    --symlink-install \
+    --cmake-args \
+    --no-warn-unused-cli \
+    -DSECURITY=ON \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+RUN echo "source ~/ros2_amros/install/setup.bash" >> ~/.bashrc \
+    && echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc \
+    && echo "export ROS_LOCALHOST_ONLY=1" >> ~/.bashrc \
+    && echo "export AM_PLATFORM=sim" >> ~/.bashrc
+
+WORKDIR /home/ubuntu/ros2_ws/src
+
+CMD ["bash"]
